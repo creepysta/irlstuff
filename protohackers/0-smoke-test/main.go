@@ -1,59 +1,57 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net"
 )
 
 var (
-	port  = flag.String("port", ":8080", "port for listening")
-	debug = flag.Bool("debug", false, "set debug logging")
+	host = flag.String("host", "localhost", "host")
+	port = flag.String("port", "8080", "port")
 )
 
 func main() {
 	flag.Parse()
 
-	tcp, err := net.Listen("tcp", *port)
+	addr := fmt.Sprintf("%s:%s", *host, *port)
+	tcp, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("failed to create listener, err: %s", err)
 	}
 	defer tcp.Close()
-	fmt.Printf("Listening on port - %s...\n", *port)
+	fmt.Printf("Listening on port - %s...\n", addr)
 	for {
 		conn, err := tcp.Accept()
 		if err != nil {
 			log.Printf("failed to accept a connection, err: %s", err)
 			continue
 		}
-		go handleConnection(conn)
+		go echo(conn)
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func echo(conn net.Conn) {
 	defer conn.Close()
+	// if _, err := io.Copy(conn, conn); err != nil {
+	// 	fmt.Println("failed to copy with error: ", err.Error())
+	// }
 
-	fmt.Printf("Handling connection - %s\n", conn.RemoteAddr())
-	reader := bufio.NewReader(conn)
+	fmt.Println("Client connected: ", conn.RemoteAddr())
+	buf := make([]byte, 1024)
 	for {
-		bytes, err := reader.ReadBytes(byte('\n'))
-		if err != nil {
-			if err == io.EOF { // closing client sends io.EOF
-				fmt.Printf("Closing client connection %s\n", conn.RemoteAddr())
+		n, err := conn.Read(buf)
+		if n > 0 {
+			fmt.Printf("Client sent: %s\n", buf[:n])
+			if _, werr := conn.Write(buf[:n]); werr != nil {
+				fmt.Println("Closing connection, write failed, err: ", err.Error())
 				return
 			}
-			fmt.Println("failed to read data, err:", err)
-			return
 		}
-		fmt.Printf("Client said: %s", bytes)
-		prefix := ""
-		if *debug {
-			prefix = "Server replied with - "
+		if err != nil {
+			fmt.Println("Closing connection, read failed, err: ", err.Error())
+			return // EOF or error
 		}
-		response := fmt.Sprintf("%s%s", prefix, bytes)
-		conn.Write([]byte(response))
 	}
 }
